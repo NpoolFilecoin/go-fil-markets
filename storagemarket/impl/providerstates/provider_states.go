@@ -515,7 +515,7 @@ func VerifyDealPreCommitted(ctx fsm.Context, environment ProviderDealEnvironment
 		if !strings.Contains(err.Error(), "failed to look up deal on chain") {
 			return ctx.Trigger(storagemarket.ProviderEventDealPrecommitFailed, err)
 		}
-		log.Warnf("dealID %v in sector %v verify precommited error %v", deal.DealID, sectorNumber, err)
+		log.Warnf("dealID %v verify precommited error %v", deal.DealID, err)
 	}
 	return nil
 }
