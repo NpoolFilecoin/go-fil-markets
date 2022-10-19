@@ -36,8 +36,19 @@ type StorageProvider interface {
 	// GetAsk returns the storage miner's ask, or nil if one does not exist.
 	GetAsk() *SignedStorageAsk
 
+	// GetLocalDeal gets a deal by signed proposal cid
+	GetLocalDeal(cid cid.Cid) (MinerDeal, error)
+
+	// LocalDealCount gets the number of local deals
+	LocalDealCount() (int, error)
+
 	// ListLocalDeals lists deals processed by this storage provider
 	ListLocalDeals() ([]MinerDeal, error)
+
+	// ListLocalDealsPage lists deals by creation time descending, starting
+	// at the deal with the given signed proposal cid, skipping offset deals
+	// and returning up to limit deals
+	ListLocalDealsPage(startPropCid *cid.Cid, offset int, limit int) ([]MinerDeal, error)
 
 	// AddStorageCollateral adds storage collateral
 	AddStorageCollateral(ctx context.Context, amount abi.TokenAmount) error

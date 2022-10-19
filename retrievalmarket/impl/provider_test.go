@@ -814,6 +814,7 @@ func TestHandleQueryStream(t *testing.T) {
 			expResp: retrievalmarket.QueryResponse{
 				Status:        retrievalmarket.QueryResponseUnavailable,
 				PieceCIDFound: retrievalmarket.QueryItemUnavailable,
+				Message:       "piece info for cid not found (deal has not been added to a piece yet)",
 			},
 			expectedPricePerByte:            big.Zero(),
 			expectedPaymentInterval:         0,
@@ -829,6 +830,7 @@ func TestHandleQueryStream(t *testing.T) {
 			expResp: retrievalmarket.QueryResponse{
 				Status:        retrievalmarket.QueryResponseUnavailable,
 				PieceCIDFound: retrievalmarket.QueryItemUnavailable,
+				Message:       "piece info for cid not found (deal has not been added to a piece yet)",
 			},
 			expectedPricePerByte:            big.Zero(),
 			expectedPaymentInterval:         0,
