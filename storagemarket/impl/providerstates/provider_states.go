@@ -489,12 +489,17 @@ func CleanupDeal(ctx fsm.Context, environment ProviderDealEnvironment, deal stor
 
 // VerifyDealPreCommitted verifies that a deal has been pre-committed
 func VerifyDealPreCommitted(ctx fsm.Context, environment ProviderDealEnvironment, deal storagemarket.MinerDeal) error {
+	var _sectorNumber abi.SectorNumber
+
 	cb := func(sectorNumber abi.SectorNumber, isActive bool, err error) {
 		// It's possible that
 		// - we miss the pre-commit message and have to wait for prove-commit
 		// - the deal is already active (for example if the node is restarted
 		//   while waiting for pre-commit)
 		// In either of these two cases, isActive will be true.
+
+		_sectorNumber = sectorNumber
+
 		switch {
 		case err != nil:
 			if !strings.Contains(err.Error(), "failed to look up deal on chain") {
@@ -515,7 +520,7 @@ func VerifyDealPreCommitted(ctx fsm.Context, environment ProviderDealEnvironment
 		if !strings.Contains(err.Error(), "failed to look up deal on chain") {
 			return ctx.Trigger(storagemarket.ProviderEventDealPrecommitFailed, err)
 		}
-		log.Warnf("dealID %v verify precommited error %v", deal.DealID, err)
+		log.Warnf("dealID %v sector %v verify precommited error %v", deal.DealID, _sectorNumber, err)
 	}
 	return nil
 }
