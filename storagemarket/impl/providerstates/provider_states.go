@@ -502,11 +502,7 @@ func VerifyDealPreCommitted(ctx fsm.Context, environment ProviderDealEnvironment
 
 		switch {
 		case err != nil:
-			if !strings.Contains(err.Error(), "failed to look up deal on chain") {
-				_ = ctx.Trigger(storagemarket.ProviderEventDealPrecommitFailed, err)
-				return
-			}
-			log.Warnf("dealID %v in sector %v verify precommited error %v", deal.DealID, sectorNumber, err)
+			_ = ctx.Trigger(storagemarket.ProviderEventDealPrecommitFailed, err)
 		case isActive:
 			_ = ctx.Trigger(storagemarket.ProviderEventDealActivated)
 		default:
@@ -517,10 +513,7 @@ func VerifyDealPreCommitted(ctx fsm.Context, environment ProviderDealEnvironment
 	err := environment.Node().OnDealSectorPreCommitted(ctx.Context(), deal.Proposal.Provider, deal.DealID, deal.Proposal, deal.PublishCid, cb)
 
 	if err != nil {
-		if !strings.Contains(err.Error(), "failed to look up deal on chain") {
-			return ctx.Trigger(storagemarket.ProviderEventDealPrecommitFailed, err)
-		}
-		log.Warnf("dealID %v sector %v verify precommited error %v", deal.DealID, _sectorNumber, err)
+		return ctx.Trigger(storagemarket.ProviderEventDealPrecommitFailed, err)
 	}
 	return nil
 }
