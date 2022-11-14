@@ -494,7 +494,7 @@ func CleanupDeal(ctx fsm.Context, environment ProviderDealEnvironment, deal stor
 
 // VerifyDealPreCommitted verifies that a deal has been pre-committed
 func VerifyDealPreCommitted(ctx fsm.Context, environment ProviderDealEnvironment, deal storagemarket.MinerDeal) error {
-	var _sectorNumber abi.SectorNumber
+	// var _sectorNumber abi.SectorNumber
 
 	cb := func(sectorNumber abi.SectorNumber, isActive bool, err error) {
 		// It's possible that
@@ -503,7 +503,7 @@ func VerifyDealPreCommitted(ctx fsm.Context, environment ProviderDealEnvironment
 		//   while waiting for pre-commit)
 		// In either of these two cases, isActive will be true.
 
-		_sectorNumber = sectorNumber
+		// _sectorNumber = sectorNumber
 
 		switch {
 		case err != nil:
