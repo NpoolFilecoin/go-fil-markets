@@ -17,7 +17,7 @@ import (
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/builtin/v8/market"
+	"github.com/filecoin-project/go-state-types/builtin/v9/market"
 	marketOld "github.com/filecoin-project/specs-actors/actors/builtin/market"
 
 	"github.com/filecoin-project/go-fil-markets/filestore"
@@ -171,6 +171,77 @@ func TestProvider_Migrations(t *testing.T) {
 		}
 		require.Equal(t, expectedDeal, deal)
 	}
+
+	// Verify get deal by signed proposal cid
+	deal, err := provider.GetLocalDeal(deals[0].ProposalCid)
+	require.NoError(t, err)
+	require.Equal(t, deals[0].ProposalCid, deal.ProposalCid)
+
+	// Verify the deal count
+	count, err := provider.LocalDealCount()
+	require.NoError(t, err)
+	require.Equal(t, len(deals), count)
+
+	// Verify get a page of deals without a nil start proposal cid
+	listedDeals, err := provider.ListLocalDealsPage(nil, 0, len(deals))
+	require.NoError(t, err)
+	require.Len(t, listedDeals, len(deals))
+	for i, dl := range listedDeals {
+		if i == 0 {
+			continue
+		}
+		// Verify descending order by creation time
+		require.True(t, dl.CreationTime.Time().Before(listedDeals[i-1].CreationTime.Time()))
+	}
+	firstDeal := listedDeals[0]
+	secondDeal := listedDeals[1]
+	thirdDeal := listedDeals[2]
+
+	// Verify get a page of deals with a nil start proposal cid and with a limit
+	listedDeals, err = provider.ListLocalDealsPage(nil, 0, 2)
+	require.NoError(t, err)
+	require.Len(t, listedDeals, 2)
+	// Verify correct deals
+	require.Equal(t, firstDeal.ProposalCid, listedDeals[0].ProposalCid)
+	require.Equal(t, secondDeal.ProposalCid, listedDeals[1].ProposalCid)
+
+	// Verify get a page of deals with a start proposal cid and with a limit
+	listedDeals, err = provider.ListLocalDealsPage(&secondDeal.ProposalCid, 0, 2)
+	require.NoError(t, err)
+	require.Len(t, listedDeals, 2)
+	// Verify correct deals
+	require.Equal(t, secondDeal.ProposalCid, listedDeals[0].ProposalCid)
+	require.Equal(t, thirdDeal.ProposalCid, listedDeals[1].ProposalCid)
+
+	// Verify get a page of deals with a start proposal cid, and offset and a limit
+	listedDeals, err = provider.ListLocalDealsPage(&secondDeal.ProposalCid, 1, 1)
+	require.NoError(t, err)
+	require.Len(t, listedDeals, 1)
+	// Verify correct deals
+	require.Equal(t, thirdDeal.ProposalCid, listedDeals[0].ProposalCid)
+}
+
+func oldDealProposal(p *market.ClientDealProposal) (*marketOld.ClientDealProposal, error) {
+	label, err := p.Proposal.Label.ToString()
+	if err != nil {
+		return nil, err
+	}
+	return &marketOld.ClientDealProposal{
+		Proposal: marketOld.DealProposal{
+			PieceCID:             p.Proposal.PieceCID,
+			PieceSize:            p.Proposal.PieceSize,
+			VerifiedDeal:         p.Proposal.VerifiedDeal,
+			Client:               p.Proposal.Client,
+			Provider:             p.Proposal.Provider,
+			Label:                label,
+			StartEpoch:           p.Proposal.StartEpoch,
+			EndEpoch:             p.Proposal.EndEpoch,
+			StoragePricePerEpoch: p.Proposal.StoragePricePerEpoch,
+			ProviderCollateral:   p.Proposal.ProviderCollateral,
+			ClientCollateral:     p.Proposal.ClientCollateral,
+		},
+		ClientSignature: p.ClientSignature,
+	}, nil
 }
 
 func oldDealProposal(p *market.ClientDealProposal) (*marketOld.ClientDealProposal, error) {

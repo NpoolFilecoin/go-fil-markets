@@ -14,7 +14,7 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
-	metadata2 "github.com/filecoin-project/index-provider/metadata"
+	"github.com/filecoin-project/index-provider/metadata"
 
 	"github.com/filecoin-project/go-fil-markets/commp"
 	"github.com/filecoin-project/go-fil-markets/filestore"
@@ -40,22 +40,19 @@ func (p *providerDealEnvironment) RegisterShard(ctx context.Context, pieceCid ci
 // AnnounceIndex informs indexer nodes that a new deal was received,
 // so they can download its index
 func (p *providerDealEnvironment) AnnounceIndex(ctx context.Context, deal storagemarket.MinerDeal) (advertCid cid.Cid, err error) {
-	fm := metadata2.GraphsyncFilecoinV1Metadata{
+	mt := metadata.New(&metadata.GraphsyncFilecoinV1{
 		PieceCID:      deal.Proposal.PieceCID,
 		FastRetrieval: deal.FastRetrieval,
 		VerifiedDeal:  deal.Proposal.VerifiedDeal,
-	}
-	dtm, err := fm.ToIndexerMetadata()
-	if err != nil {
-		return cid.Undef, fmt.Errorf("failed to encode metadata: %w", err)
-	}
+	})
+
 	// ensure we have a connection with the full node host so that the index provider gossip sub announcements make their
 	// way to the filecoin bootstrapper network
 	if err := p.p.meshCreator.Connect(ctx); err != nil {
 		return cid.Undef, fmt.Errorf("cannot publish index record as indexer host failed to connect to the full node: %w", err)
 	}
 
-	return p.p.indexProvider.NotifyPut(ctx, deal.ProposalCid.Bytes(), dtm)
+	return p.p.indexProvider.NotifyPut(ctx, deal.ProposalCid.Bytes(), mt)
 }
 
 func (p *providerDealEnvironment) RemoveIndex(ctx context.Context, proposalCid cid.Cid) error {
@@ -137,7 +134,12 @@ func (p *providerDealEnvironment) GeneratePieceCommitment(proposalCid cid.Cid, c
 		}
 	}()
 
-	pieceCID, err := commp.GenerateCommp(rd.DataReader(), rd.Header.DataSize, uint64(dealSize))
+	r, err := rd.DataReader()
+	if err != nil {
+		return cid.Undef, "", fmt.Errorf("failed to get data reader over CAR file, proposalCid=%s, carPath=%s: %w", proposalCid, carPath, err)
+	}
+
+	pieceCID, err := commp.GenerateCommp(r, rd.Header.DataSize, uint64(dealSize))
 	return pieceCID, "", err
 }
 
