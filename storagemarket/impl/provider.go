@@ -388,19 +388,24 @@ func (p *Provider) ImportDataForDeal(ctx context.Context, propCid cid.Cid, data 
 		return xerrors.Errorf("failed to seek through temp imported file: %w", err)
 	}
 
-	proofType, err := p.spn.GetProofType(ctx, p.actor, nil)
-	if err != nil {
-		cleanup()
-		return xerrors.Errorf("failed to determine proof type: %w", err)
-	}
-	log.Debugw("fetched proof type", "propCid", propCid)
+	/*
+		proofType, err := p.spn.GetProofType(ctx, p.actor, nil)
+		if err != nil {
+			cleanup()
+			return xerrors.Errorf("failed to determine proof type: %w", err)
+		}
+		log.Debugw("fetched proof type", "propCid", propCid)
 
-	pieceCid, err := generatePieceCommitment(proofType, tempfi, carSize)
-	if err != nil {
-		cleanup()
-		return xerrors.Errorf("failed to generate commP: %w", err)
-	}
-	log.Debugw("generated pieceCid for imported file", "propCid", propCid)
+		pieceCid, err := generatePieceCommitment(proofType, tempfi, carSize)
+		if err != nil {
+			cleanup()
+			return xerrors.Errorf("failed to generate commP: %w", err)
+		}
+		log.Debugw("generated pieceCid for imported file", "propCid", propCid)
+	*/
+
+	log.Infow("use piece cid in deal proposal", "PieceCID", d.Proposal.PieceCID, "PieceSize", d.Proposal.PieceSize, "n", n, "carSize", carSize)
+	pieceCid := d.Proposal.PieceCID
 
 	if carSizePadded := padreader.PaddedSize(carSize).Padded(); carSizePadded < d.Proposal.PieceSize {
 		// need to pad up!
