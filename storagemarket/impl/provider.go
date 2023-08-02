@@ -374,7 +374,7 @@ func (p *Provider) ImportHttpDataForDeal(ctx context.Context, propCid cid.Cid, u
 	}
 	carSize := contentLength
 
-	log.Infow("use piece cid in deal proposal", "PieceCID", d.Proposal.PieceCID, "PieceSize", d.Proposal.PieceSize, "carSize", carSize)
+	log.Infow("use piece cid in deal proposal", "PieceCID", d.Proposal.PieceCID, "PieceSize", d.Proposal.PieceSize, "carSize", carSize, "URL", url.String())
 	pieceCid := d.Proposal.PieceCID
 
 	if carSizePadded := padreader.PaddedSize(carSize).Padded(); carSizePadded < d.Proposal.PieceSize {

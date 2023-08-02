@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
+	// "path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -333,8 +335,9 @@ func WaitForPublish(ctx fsm.Context, environment ProviderDealEnvironment, deal s
 }
 
 type httpReader struct {
-	url  *url.URL
-	body io.ReadCloser
+	url      *url.URL
+	testFile *os.File
+	body     io.ReadCloser
 }
 
 func (r httpReader) Seek(offset int64, whence int) (int64, error) {
@@ -343,9 +346,7 @@ func (r httpReader) Seek(offset int64, whence int) (int64, error) {
 		if err := r.body.Close(); err != nil {
 			return 0, err
 		}
-		resp, err := resty.New().R().
-			SetDoNotParseResponse(true).
-			Head(r.url.String())
+		resp, err := resty.New().R().SetDoNotParseResponse(true).Get(r.url.String())
 		if err != nil {
 			return 0, xerrors.Errorf("head %v: %v", r.url.String(), err)
 		}
@@ -360,10 +361,25 @@ func (r httpReader) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (r httpReader) Read(p []byte) (n int, err error) {
-	return r.body.Read(p)
+	n, err = r.body.Read(p)
+	if err != nil {
+		log.Errorw("httpReader read", "URL", r.url.String(), "Error", err)
+		return 0, err
+	}
+	if _, err := r.testFile.Write(p); err != nil {
+		log.Errorw("httpReader write", "URL", r.url.String(), "Error", err)
+		return 0, err
+	}
+	if err := r.testFile.Sync(); err != nil {
+		log.Errorw("httpReader sync", "URL", r.url.String(), "Error", err)
+		return 0, err
+	}
+	return n, nil
 }
 
 func (r httpReader) Close() error {
+	log.Infow("httpReader close", "URL", r.url.String())
+	_ = r.testFile.Close()
 	return r.body.Close()
 }
 
@@ -372,9 +388,7 @@ func HandoffDeal(ctx fsm.Context, environment ProviderDealEnvironment, deal stor
 	var packingInfo *storagemarket.PackingResult
 	var carFilePath string
 	if url1, err := url.Parse(string(deal.PiecePath)); err == nil && strings.HasPrefix(string(deal.PiecePath), "http") {
-		resp, err := resty.New().R().
-			SetDoNotParseResponse(true).
-			Head(url1.String())
+		resp, err := resty.New().R().SetDoNotParseResponse(true).Get(url1.String())
 		if err != nil {
 			return xerrors.Errorf("head %v: %v", url1.String(), err)
 		}
@@ -388,7 +402,13 @@ func HandoffDeal(ctx fsm.Context, environment ProviderDealEnvironment, deal stor
 		}
 		carFilePath = url1.String()
 
-		log.Infow("handing off deal to sealing subsystem", "pieceCid", deal.Proposal.PieceCID, "proposalCid", deal.ProposalCid, "PiecePath", deal.PiecePath, "contentLength", contentLength)
+		/*
+			file, err := os.OpenFile(filepath.Join("/tmp", deal.Proposal.PieceCID.String()), os.O_RDWR|os.O_CREATE, 0755)
+			if err != nil {
+				return xerrors.Errorf("testfile %v: %v", url1.String(), err)
+			}
+		*/
+		log.Infow("handing off deal to sealing subsystem", "pieceCid", deal.Proposal.PieceCID, "proposalCid", deal.ProposalCid, "PiecePath", deal.PiecePath, "contentLength", contentLength, "URL", url1.String())
 		reader := &httpReader{
 			url:  url1,
 			body: resp.RawBody(),
