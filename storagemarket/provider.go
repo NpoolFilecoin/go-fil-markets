@@ -3,6 +3,7 @@ package storagemarket
 import (
 	"context"
 	"io"
+	"net/url"
 
 	"github.com/ipfs/go-cid"
 
@@ -58,6 +59,9 @@ type StorageProvider interface {
 
 	// ImportDataForDeal manually imports data for an offline storage deal
 	ImportDataForDeal(ctx context.Context, propCid cid.Cid, data io.Reader) error
+
+	// ImportHttpDataForDeal manually imports data for an offline storage deal
+	ImportHttpDataForDeal(ctx context.Context, propCid cid.Cid, url *url.URL) error
 
 	// SubscribeToEvents listens for events that happen related to storage deals on a provider
 	SubscribeToEvents(subscriber ProviderSubscriber) shared.Unsubscribe
