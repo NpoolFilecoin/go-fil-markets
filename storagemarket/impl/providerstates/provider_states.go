@@ -362,19 +362,21 @@ func (r httpReader) Seek(offset int64, whence int) (int64, error) {
 
 func (r httpReader) Read(p []byte) (n int, err error) {
 	n, err = r.body.Read(p)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		log.Errorw("httpReader read", "URL", r.url.String(), "Error", err)
 		return 0, err
 	}
-	if _, err := r.testFile.Write(p); err != nil {
-		log.Errorw("httpReader write", "URL", r.url.String(), "Error", err)
-		return 0, err
+	if r.testFile != nil {
+		if _, err := r.testFile.Write(p); err != nil {
+			log.Errorw("httpReader write", "URL", r.url.String(), "Error", err)
+			return 0, err
+		}
+		if err := r.testFile.Sync(); err != nil {
+			log.Errorw("httpReader sync", "URL", r.url.String(), "Error", err)
+			return 0, err
+		}
 	}
-	if err := r.testFile.Sync(); err != nil {
-		log.Errorw("httpReader sync", "URL", r.url.String(), "Error", err)
-		return 0, err
-	}
-	return n, nil
+	return n, err
 }
 
 func (r httpReader) Close() error {
