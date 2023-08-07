@@ -335,27 +335,32 @@ func WaitForPublish(ctx fsm.Context, environment ProviderDealEnvironment, deal s
 }
 
 type httpReader struct {
-	url      *url.URL
-	testFile *os.File
-	body     io.ReadCloser
+	url       *url.URL
+	testFile  *os.File
+	readBytes int
+	body      io.ReadCloser
 }
 
 func (r httpReader) Seek(offset int64, whence int) (int64, error) {
 	switch whence {
 	case io.SeekStart:
+		log.Infow("httpReader seek start", "Url", r.url.String())
 		if err := r.body.Close(); err != nil {
+			log.Infow("fail close old body", "Url", r.url.String(), "Error", err)
 			return 0, err
 		}
 		resp, err := resty.New().R().SetDoNotParseResponse(true).Get(r.url.String())
 		if err != nil {
-			return 0, xerrors.Errorf("head %v: %v", r.url.String(), err)
+			log.Infow("httpReader seek start", "Url", r.url.String(), "Error", err)
+			return 0, xerrors.Errorf("get %v: %v", r.url.String(), err)
 		}
 		if !resp.IsSuccess() {
-			return 0, xerrors.Errorf("head %v: %v", r.url.String(), resp.Status())
+			log.Infow("httpReader seek start", "Url", r.url.String())
+			return 0, xerrors.Errorf("get %v: %v", r.url.String(), resp.Status())
 		}
 		r.body = resp.RawBody()
 	default:
-		log.Errorw("http seek", "Offset", offset, "Whence", whence)
+		log.Errorw("httpReader seek", "Offset", offset, "Whence", whence)
 		return 0, xerrors.Errorf("invalid seek")
 	}
 	return 0, nil
@@ -364,24 +369,28 @@ func (r httpReader) Seek(offset int64, whence int) (int64, error) {
 func (r httpReader) Read(p []byte) (n int, err error) {
 	n, err = r.body.Read(p)
 	if err != nil && err != io.EOF {
-		log.Errorw("httpReader read", "URL", r.url.String(), "Error", err)
+		log.Errorw("httpReader read", "Url", r.url.String(), "Error", err)
 		return 0, err
 	}
 	if r.testFile != nil {
 		if _, err := r.testFile.Write(p); err != nil {
-			log.Errorw("httpReader write", "URL", r.url.String(), "Error", err)
+			log.Errorw("httpReader write", "Url", r.url.String(), "Error", err)
 			return 0, err
 		}
 		if err := r.testFile.Sync(); err != nil {
-			log.Errorw("httpReader sync", "URL", r.url.String(), "Error", err)
+			log.Errorw("httpReader sync", "Url", r.url.String(), "Error", err)
 			return 0, err
 		}
+	}
+	r.readBytes += n
+	if err == io.EOF {
+		log.Infow("httpReader read", "Url", r.url.String(), "Bytes", r.readBytes)
 	}
 	return n, err
 }
 
 func (r httpReader) Close() error {
-	log.Infow("httpReader close", "URL", r.url.String())
+	log.Infow("httpReader close", "Url", r.url.String())
 	_ = r.testFile.Close()
 	return r.body.Close()
 }
@@ -411,7 +420,7 @@ func HandoffDeal(ctx fsm.Context, environment ProviderDealEnvironment, deal stor
 				return xerrors.Errorf("testfile %v: %v", url1.String(), err)
 			}
 		*/
-		log.Infow("handing off deal to sealing subsystem", "pieceCid", deal.Proposal.PieceCID, "proposalCid", deal.ProposalCid, "PiecePath", deal.PiecePath, "contentLength", contentLength, "URL", url1.String())
+		log.Infow("handing off deal to sealing subsystem", "pieceCid", deal.Proposal.PieceCID, "proposalCid", deal.ProposalCid, "PiecePath", deal.PiecePath, "contentLength", contentLength, "Url", url1.String())
 		reader := &httpReader{
 			url:  url1,
 			body: resp.RawBody(),
