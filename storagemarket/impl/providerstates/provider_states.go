@@ -338,6 +338,7 @@ type httpReader struct {
 	url       *url.URL
 	testFile  *os.File
 	readBytes int
+	incBytes  int
 	body      io.ReadCloser
 }
 
@@ -383,8 +384,13 @@ func (r httpReader) Read(p []byte) (n int, err error) {
 		}
 	}
 	r.readBytes += n
+	r.incBytes += n
 	if err == io.EOF {
 		log.Infow("httpReader read", "Url", r.url.String(), "Bytes", r.readBytes)
+	}
+	if r.incBytes < 1*1024*1024*1024 {
+		log.Infow("httpReader read", "Url", r.url.String(), "Bytes", r.readBytes, "Error", err)
+		r.incBytes = 0
 	}
 	return n, err
 }
