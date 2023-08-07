@@ -4,9 +4,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
+	"os"
+	// "path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-resty/resty/v2"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
 	carv2 "github.com/ipld/go-car/v2"
@@ -385,7 +390,41 @@ func (r httpReader) Close() error {
 func HandoffDeal(ctx fsm.Context, environment ProviderDealEnvironment, deal storagemarket.MinerDeal) error {
 	var packingInfo *storagemarket.PackingResult
 	var carFilePath string
-	if deal.PiecePath != "" {
+	if url1, err := url.Parse(string(deal.PiecePath)); err == nil && strings.HasPrefix(string(deal.PiecePath), "http") {
+		resp, err := resty.New().R().SetDoNotParseResponse(true).Get(url1.String())
+		if err != nil {
+			return xerrors.Errorf("head %v: %v", url1.String(), err)
+		}
+		if !resp.IsSuccess() {
+			return xerrors.Errorf("head %v: %v", url1.String(), resp.Status())
+		}
+
+		contentLength, err := strconv.ParseUint(resp.Header().Get("Content-Length"), 10, 64)
+		if err != nil {
+			return xerrors.Errorf("content-length %v: %v", url1.String(), err)
+		}
+		carFilePath = url1.String()
+
+		/*
+			file, err := os.OpenFile(filepath.Join("/tmp", deal.Proposal.PieceCID.String()), os.O_RDWR|os.O_CREATE, 0755)
+			if err != nil {
+				return xerrors.Errorf("testfile %v: %v", url1.String(), err)
+			}
+		*/
+		log.Infow("handing off deal to sealing subsystem", "pieceCid", deal.Proposal.PieceCID, "proposalCid", deal.ProposalCid, "PiecePath", deal.PiecePath, "contentLength", contentLength, "URL", url1.String())
+		reader := &httpReader{
+			url:  url1,
+			body: resp.RawBody(),
+		}
+		packingInfo, err = handoffDeal(ctx.Context(), environment, deal, reader, contentLength)
+		if err := reader.Close(); err != nil {
+			log.Errorw("failed to close imported CAR file", "pieceCid", deal.Proposal.PieceCID, "proposalCid", deal.ProposalCid, "err", err)
+		}
+		if err != nil {
+			err = xerrors.Errorf("packing piece at path %s: %w", deal.PiecePath, err)
+			return ctx.Trigger(storagemarket.ProviderEventDealHandoffFailed, err)
+		}
+	} else if deal.PiecePath != "" {
 		// Data for offline deals is stored on disk, so if PiecePath is set,
 		// create a Reader from the file path
 		file, err := environment.FileStore().Open(deal.PiecePath)
