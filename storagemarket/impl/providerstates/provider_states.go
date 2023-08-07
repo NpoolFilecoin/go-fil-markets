@@ -329,6 +329,58 @@ func WaitForPublish(ctx fsm.Context, environment ProviderDealEnvironment, deal s
 	return ctx.Trigger(storagemarket.ProviderEventDealPublished, res.DealID, res.FinalCid)
 }
 
+type httpReader struct {
+	url      *url.URL
+	testFile *os.File
+	body     io.ReadCloser
+}
+
+func (r httpReader) Seek(offset int64, whence int) (int64, error) {
+	switch whence {
+	case io.SeekStart:
+		if err := r.body.Close(); err != nil {
+			return 0, err
+		}
+		resp, err := resty.New().R().SetDoNotParseResponse(true).Get(r.url.String())
+		if err != nil {
+			return 0, xerrors.Errorf("head %v: %v", r.url.String(), err)
+		}
+		if !resp.IsSuccess() {
+			return 0, xerrors.Errorf("head %v: %v", r.url.String(), resp.Status())
+		}
+		r.body = resp.RawBody()
+	default:
+		log.Errorw("http seek", "Offset", offset, "Whence", whence)
+		return 0, xerrors.Errorf("invalid seek")
+	}
+	return 0, nil
+}
+
+func (r httpReader) Read(p []byte) (n int, err error) {
+	n, err = r.body.Read(p)
+	if err != nil && err != io.EOF {
+		log.Errorw("httpReader read", "URL", r.url.String(), "Error", err)
+		return 0, err
+	}
+	if r.testFile != nil {
+		if _, err := r.testFile.Write(p); err != nil {
+			log.Errorw("httpReader write", "URL", r.url.String(), "Error", err)
+			return 0, err
+		}
+		if err := r.testFile.Sync(); err != nil {
+			log.Errorw("httpReader sync", "URL", r.url.String(), "Error", err)
+			return 0, err
+		}
+	}
+	return n, err
+}
+
+func (r httpReader) Close() error {
+	log.Infow("httpReader close", "URL", r.url.String())
+	_ = r.testFile.Close()
+	return r.body.Close()
+}
+
 // HandoffDeal hands off a published deal for sealing and commitment in a sector
 func HandoffDeal(ctx fsm.Context, environment ProviderDealEnvironment, deal storagemarket.MinerDeal) error {
 	var packingInfo *storagemarket.PackingResult
