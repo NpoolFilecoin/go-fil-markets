@@ -339,14 +339,16 @@ type httpReader struct {
 	body      io.ReadCloser
 }
 
-func (r httpReader) Seek(offset int64, whence int) (int64, error) {
+func (r *httpReader) Seek(offset int64, whence int) (int64, error) {
 	switch whence {
 	case io.SeekStart:
 		if err := r.body.Close(); err != nil {
 			log.Infow("httpReader close old body", "Url", r.url.String(), "Error", err)
 			return 0, err
 		}
-		resp, err := resty.New().SetDoNotParseResponse(true).R().Get(r.url.String())
+		resp, err := resty.New().
+			SetDoNotParseResponse(true).
+			R().Get(r.url.String())
 		if err != nil {
 			log.Infow("httpReader seek start", "Url", r.url.String(), "Error", err)
 			return 0, xerrors.Errorf("seek %v: %v", r.url.String(), err)
@@ -360,6 +362,8 @@ func (r httpReader) Seek(offset int64, whence int) (int64, error) {
 		}
 		log.Infow("httpReader seek start", "Url", r.url.String())
 		r.body = resp.RawBody()
+		r.readBytes = 0
+		r.incBytes = 0
 	default:
 		log.Errorw("httpReader seek", "Offset", offset, "Whence", whence)
 		return 0, xerrors.Errorf("invalid seek")
@@ -367,7 +371,7 @@ func (r httpReader) Seek(offset int64, whence int) (int64, error) {
 	return 0, nil
 }
 
-func (r httpReader) Read(p []byte) (n int, err error) {
+func (r *httpReader) Read(p []byte) (n int, err error) {
 	n, err = r.body.Read(p)
 	if err != nil && err != io.EOF {
 		log.Errorw("httpReader read", "Url", r.url.String(), "n", n, "Bytes", r.readBytes, "Error", err)
@@ -381,14 +385,14 @@ func (r httpReader) Read(p []byte) (n int, err error) {
 	if err == io.EOF {
 		log.Infow("httpReader read", "Url", r.url.String(), "Bytes", r.readBytes, "n", n)
 	}
-	if r.incBytes < 1*1024*1024*1024 {
+	if r.incBytes >= 1*1024*1024*1024 {
 		log.Infow("httpReader read", "Url", r.url.String(), "Bytes", r.readBytes, "n", n, "Error", err)
 		r.incBytes = 0
 	}
 	return n, err
 }
 
-func (r httpReader) Close() error {
+func (r *httpReader) Close() error {
 	log.Infow("httpReader close", "Url", r.url.String())
 	return r.body.Close()
 }
@@ -398,7 +402,9 @@ func HandoffDeal(ctx fsm.Context, environment ProviderDealEnvironment, deal stor
 	var packingInfo *storagemarket.PackingResult
 	var carFilePath string
 	if url1, err := url.Parse(string(deal.PiecePath)); err == nil && strings.HasPrefix(string(deal.PiecePath), "http") {
-		resp, err := resty.New().SetDoNotParseResponse(true).R().Get(url1.String())
+		resp, err := resty.New().
+			SetDoNotParseResponse(true).
+			R().Get(url1.String())
 		if err != nil {
 			return xerrors.Errorf("head %v: %v", url1.String(), err)
 		}
