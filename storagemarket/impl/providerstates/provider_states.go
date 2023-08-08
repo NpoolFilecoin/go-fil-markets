@@ -345,20 +345,20 @@ type httpReader struct {
 func (r httpReader) Seek(offset int64, whence int) (int64, error) {
 	switch whence {
 	case io.SeekStart:
-		log.Infow("httpReader seek start", "Url", r.url.String())
 		if err := r.body.Close(); err != nil {
-			log.Infow("fail close old body", "Url", r.url.String(), "Error", err)
+			log.Infow("httpReader close old body", "Url", r.url.String(), "Error", err)
 			return 0, err
 		}
 		resp, err := resty.New().R().SetDoNotParseResponse(true).Get(r.url.String())
 		if err != nil {
 			log.Infow("httpReader seek start", "Url", r.url.String(), "Error", err)
-			return 0, xerrors.Errorf("get %v: %v", r.url.String(), err)
+			return 0, xerrors.Errorf("seek %v: %v", r.url.String(), err)
 		}
 		if !resp.IsSuccess() {
 			log.Infow("httpReader seek start", "Url", r.url.String())
-			return 0, xerrors.Errorf("get %v: %v", r.url.String(), resp.Status())
+			return 0, xerrors.Errorf("seek %v: %v", r.url.String(), resp.Status())
 		}
+		log.Infow("httpReader seek start", "Url", r.url.String())
 		r.body = resp.RawBody()
 	default:
 		log.Errorw("httpReader seek", "Offset", offset, "Whence", whence)
@@ -370,7 +370,7 @@ func (r httpReader) Seek(offset int64, whence int) (int64, error) {
 func (r httpReader) Read(p []byte) (n int, err error) {
 	n, err = r.body.Read(p)
 	if err != nil && err != io.EOF {
-		log.Errorw("httpReader read", "Url", r.url.String(), "Error", err)
+		log.Errorw("httpReader read", "Url", r.url.String(), "n", n, "Bytes", r.readBytes, "Error", err)
 		return 0, err
 	}
 	if r.testFile != nil {
@@ -386,10 +386,10 @@ func (r httpReader) Read(p []byte) (n int, err error) {
 	r.readBytes += n
 	r.incBytes += n
 	if err == io.EOF {
-		log.Infow("httpReader read", "Url", r.url.String(), "Bytes", r.readBytes)
+		log.Infow("httpReader read", "Url", r.url.String(), "Bytes", r.readBytes, "n", n)
 	}
 	if r.incBytes < 1*1024*1024*1024 {
-		log.Infow("httpReader read", "Url", r.url.String(), "Bytes", r.readBytes, "Error", err)
+		log.Infow("httpReader read", "Url", r.url.String(), "Bytes", r.readBytes, "n", n, "Error", err)
 		r.incBytes = 0
 	}
 	return n, err
