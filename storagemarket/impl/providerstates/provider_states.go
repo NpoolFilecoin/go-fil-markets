@@ -353,7 +353,9 @@ func (r httpReader) Seek(offset int64, whence int) (int64, error) {
 		}
 		if !resp.IsSuccess() {
 			log.Infow("httpReader seek start", "Url", r.url.String())
-			resp.RawBody().Close()
+			if resp.RawBody() != nil {
+				resp.RawBody().Close()
+			}
 			return 0, xerrors.Errorf("seek %v: %v", r.url.String(), resp.Status())
 		}
 		log.Infow("httpReader seek start", "Url", r.url.String())
@@ -401,7 +403,9 @@ func HandoffDeal(ctx fsm.Context, environment ProviderDealEnvironment, deal stor
 			return xerrors.Errorf("head %v: %v", url1.String(), err)
 		}
 		if !resp.IsSuccess() {
-			resp.RawBody().Close()
+			if resp.RawBody() != nil {
+				resp.RawBody().Close()
+			}
 			return xerrors.Errorf("head %v: %v", url1.String(), resp.Status())
 		}
 
