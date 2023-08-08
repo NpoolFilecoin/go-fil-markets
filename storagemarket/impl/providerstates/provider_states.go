@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"os"
-	// "path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -336,7 +334,6 @@ func WaitForPublish(ctx fsm.Context, environment ProviderDealEnvironment, deal s
 
 type httpReader struct {
 	url       *url.URL
-	testFile  *os.File
 	readBytes int
 	incBytes  int
 	body      io.ReadCloser
@@ -349,13 +346,14 @@ func (r httpReader) Seek(offset int64, whence int) (int64, error) {
 			log.Infow("httpReader close old body", "Url", r.url.String(), "Error", err)
 			return 0, err
 		}
-		resp, err := resty.New().R().SetDoNotParseResponse(true).Get(r.url.String())
+		resp, err := resty.New().SetDoNotParseResponse(true).R().Get(r.url.String())
 		if err != nil {
 			log.Infow("httpReader seek start", "Url", r.url.String(), "Error", err)
 			return 0, xerrors.Errorf("seek %v: %v", r.url.String(), err)
 		}
 		if !resp.IsSuccess() {
 			log.Infow("httpReader seek start", "Url", r.url.String())
+			resp.RawBody().Close()
 			return 0, xerrors.Errorf("seek %v: %v", r.url.String(), resp.Status())
 		}
 		log.Infow("httpReader seek start", "Url", r.url.String())
@@ -373,15 +371,8 @@ func (r httpReader) Read(p []byte) (n int, err error) {
 		log.Errorw("httpReader read", "Url", r.url.String(), "n", n, "Bytes", r.readBytes, "Error", err)
 		return 0, err
 	}
-	if r.testFile != nil {
-		if _, err := r.testFile.Write(p); err != nil {
-			log.Errorw("httpReader write", "Url", r.url.String(), "Error", err)
-			return 0, err
-		}
-		if err := r.testFile.Sync(); err != nil {
-			log.Errorw("httpReader sync", "Url", r.url.String(), "Error", err)
-			return 0, err
-		}
+	if r.readBytes == 0 {
+		log.Infow("httpReader read", "Url", r.url.String(), "n", n, "Error", err)
 	}
 	r.readBytes += n
 	r.incBytes += n
@@ -397,7 +388,6 @@ func (r httpReader) Read(p []byte) (n int, err error) {
 
 func (r httpReader) Close() error {
 	log.Infow("httpReader close", "Url", r.url.String())
-	_ = r.testFile.Close()
 	return r.body.Close()
 }
 
@@ -406,11 +396,12 @@ func HandoffDeal(ctx fsm.Context, environment ProviderDealEnvironment, deal stor
 	var packingInfo *storagemarket.PackingResult
 	var carFilePath string
 	if url1, err := url.Parse(string(deal.PiecePath)); err == nil && strings.HasPrefix(string(deal.PiecePath), "http") {
-		resp, err := resty.New().R().SetDoNotParseResponse(true).Get(url1.String())
+		resp, err := resty.New().SetDoNotParseResponse(true).R().Get(url1.String())
 		if err != nil {
 			return xerrors.Errorf("head %v: %v", url1.String(), err)
 		}
 		if !resp.IsSuccess() {
+			resp.RawBody().Close()
 			return xerrors.Errorf("head %v: %v", url1.String(), resp.Status())
 		}
 
@@ -420,12 +411,6 @@ func HandoffDeal(ctx fsm.Context, environment ProviderDealEnvironment, deal stor
 		}
 		carFilePath = url1.String()
 
-		/*
-			file, err := os.OpenFile(filepath.Join("/tmp", deal.Proposal.PieceCID.String()), os.O_RDWR|os.O_CREATE, 0755)
-			if err != nil {
-				return xerrors.Errorf("testfile %v: %v", url1.String(), err)
-			}
-		*/
 		log.Infow("handing off deal to sealing subsystem", "pieceCid", deal.Proposal.PieceCID, "proposalCid", deal.ProposalCid, "PiecePath", deal.PiecePath, "contentLength", contentLength, "Url", url1.String())
 		reader := &httpReader{
 			url:  url1,
