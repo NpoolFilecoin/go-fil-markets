@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-resty/resty/v2"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
 	carv2 "github.com/ipld/go-car/v2"
@@ -329,11 +332,109 @@ func WaitForPublish(ctx fsm.Context, environment ProviderDealEnvironment, deal s
 	return ctx.Trigger(storagemarket.ProviderEventDealPublished, res.DealID, res.FinalCid)
 }
 
+type httpReader struct {
+	url       *url.URL
+	readBytes int
+	incBytes  int
+	body      io.ReadCloser
+}
+
+func (r *httpReader) Seek(offset int64, whence int) (int64, error) {
+	switch whence {
+	case io.SeekStart:
+		if err := r.body.Close(); err != nil {
+			log.Infow("httpReader close old body", "Url", r.url.String(), "Error", err)
+			return 0, err
+		}
+		resp, err := resty.New().
+			SetDoNotParseResponse(true).
+			R().Get(r.url.String())
+		if err != nil {
+			log.Infow("httpReader seek start", "Url", r.url.String(), "Error", err)
+			return 0, xerrors.Errorf("seek %v: %v", r.url.String(), err)
+		}
+		if !resp.IsSuccess() {
+			log.Infow("httpReader seek start", "Url", r.url.String())
+			if resp.RawBody() != nil {
+				resp.RawBody().Close()
+			}
+			return 0, xerrors.Errorf("seek %v: %v", r.url.String(), resp.Status())
+		}
+		log.Infow("httpReader seek start", "Url", r.url.String())
+		r.body = resp.RawBody()
+		r.readBytes = 0
+		r.incBytes = 0
+	default:
+		log.Errorw("httpReader seek", "Offset", offset, "Whence", whence)
+		return 0, xerrors.Errorf("invalid seek")
+	}
+	return 0, nil
+}
+
+func (r *httpReader) Read(p []byte) (n int, err error) {
+	n, err = r.body.Read(p)
+	if err != nil && err != io.EOF {
+		log.Errorw("httpReader read", "Url", r.url.String(), "n", n, "Bytes", r.readBytes, "Error", err)
+		return 0, err
+	}
+	if r.readBytes == 0 {
+		log.Infow("httpReader read", "Url", r.url.String(), "n", n, "Error", err)
+	}
+	r.readBytes += n
+	r.incBytes += n
+	if err == io.EOF {
+		log.Infow("httpReader read", "Url", r.url.String(), "Bytes", r.readBytes, "n", n)
+	}
+	if r.incBytes >= 1*1024*1024*1024 {
+		log.Infow("httpReader read", "Url", r.url.String(), "Bytes", r.readBytes, "n", n, "Error", err)
+		r.incBytes = 0
+	}
+	return n, err
+}
+
+func (r *httpReader) Close() error {
+	log.Infow("httpReader close", "Url", r.url.String())
+	return r.body.Close()
+}
+
 // HandoffDeal hands off a published deal for sealing and commitment in a sector
 func HandoffDeal(ctx fsm.Context, environment ProviderDealEnvironment, deal storagemarket.MinerDeal) error {
 	var packingInfo *storagemarket.PackingResult
 	var carFilePath string
-	if deal.PiecePath != "" {
+	if url1, err := url.Parse(string(deal.PiecePath)); err == nil && strings.HasPrefix(string(deal.PiecePath), "http") {
+		resp, err := resty.New().
+			SetDoNotParseResponse(true).
+			R().Get(url1.String())
+		if err != nil {
+			return xerrors.Errorf("head %v: %v", url1.String(), err)
+		}
+		if !resp.IsSuccess() {
+			if resp.RawBody() != nil {
+				resp.RawBody().Close()
+			}
+			return xerrors.Errorf("head %v: %v", url1.String(), resp.Status())
+		}
+
+		contentLength, err := strconv.ParseUint(resp.Header().Get("Content-Length"), 10, 64)
+		if err != nil {
+			return xerrors.Errorf("content-length %v: %v", url1.String(), err)
+		}
+		carFilePath = url1.String()
+
+		log.Infow("handing off deal to sealing subsystem", "pieceCid", deal.Proposal.PieceCID, "proposalCid", deal.ProposalCid, "PiecePath", deal.PiecePath, "contentLength", contentLength, "Url", url1.String())
+		reader := &httpReader{
+			url:  url1,
+			body: resp.RawBody(),
+		}
+		packingInfo, err = handoffDeal(ctx.Context(), environment, deal, reader, contentLength)
+		if err := reader.Close(); err != nil {
+			log.Errorw("failed to close imported CAR file", "pieceCid", deal.Proposal.PieceCID, "proposalCid", deal.ProposalCid, "err", err)
+		}
+		if err != nil {
+			err = xerrors.Errorf("packing piece at path %s: %w", deal.PiecePath, err)
+			return ctx.Trigger(storagemarket.ProviderEventDealHandoffFailed, err)
+		}
+	} else if deal.PiecePath != "" {
 		// Data for offline deals is stored on disk, so if PiecePath is set,
 		// create a Reader from the file path
 		file, err := environment.FileStore().Open(deal.PiecePath)

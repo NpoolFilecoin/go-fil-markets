@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"time"
 
+	"github.com/go-resty/resty/v2"
 	"github.com/hannahhoward/go-pubsub"
 	"github.com/hashicorp/go-multierror"
 	"github.com/ipfs/go-cid"
@@ -348,6 +351,54 @@ func (p *Provider) Stop() error {
 		return err
 	}
 	return p.net.StopHandlingRequests()
+}
+
+func (p *Provider) ImportHttpDataForDeal(ctx context.Context, propCid cid.Cid, url *url.URL) error {
+	// TODO: be able to check if we have enough disk space
+	var d storagemarket.MinerDeal
+	if err := p.deals.Get(propCid).Get(&d); err != nil {
+		return xerrors.Errorf("failed getting deal %s: %w", propCid, err)
+	}
+
+	resp, err := resty.New().R().Head(url.String())
+	if err != nil {
+		return xerrors.Errorf("head %v: %v", url.String(), err)
+	}
+	if !resp.IsSuccess() {
+		return xerrors.Errorf("head %v: %v", url.String(), resp.Status())
+	}
+
+	contentLength, err := strconv.ParseUint(resp.Header().Get("Content-Length"), 10, 64)
+	if err != nil {
+		return xerrors.Errorf("content-length %v: %v", url.String(), err)
+	}
+	carSize := contentLength
+
+	log.Infow("use piece cid in deal proposal", "PieceCID", d.Proposal.PieceCID, "PieceSize", d.Proposal.PieceSize, "carSize", carSize, "URL", url.String())
+	pieceCid := d.Proposal.PieceCID
+
+	if carSizePadded := padreader.PaddedSize(carSize).Padded(); carSizePadded < d.Proposal.PieceSize {
+		// need to pad up!
+		rawPaddedCommp, err := commp.PadCommP(
+			// we know how long a pieceCid "hash" is, just blindly extract the trailing 32 bytes
+			pieceCid.Hash()[len(pieceCid.Hash())-32:],
+			uint64(carSizePadded),
+			uint64(d.Proposal.PieceSize),
+		)
+		if err != nil {
+			return err
+		}
+		pieceCid, _ = commcid.DataCommitmentV1ToCID(rawPaddedCommp)
+	}
+
+	// Verify CommP matches
+	if !pieceCid.Equals(d.Proposal.PieceCID) {
+		return xerrors.Errorf("given data does not match expected commP (got: %s, expected %s)", pieceCid, d.Proposal.PieceCID)
+	}
+
+	log.Debugw("will fire ProviderEventVerifiedData for imported file", "propCid", propCid)
+
+	return p.deals.Send(propCid, storagemarket.ProviderEventVerifiedData, filestore.Path(url.String()), filestore.Path(""))
 }
 
 // ImportDataForDeal manually imports data for an offline storage deal
