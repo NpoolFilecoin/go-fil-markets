@@ -244,6 +244,29 @@ func oldDealProposal(p *market.ClientDealProposal) (*marketOld.ClientDealProposa
 	}, nil
 }
 
+func oldDealProposal(p *market.ClientDealProposal) (*marketOld.ClientDealProposal, error) {
+	label, err := p.Proposal.Label.ToString()
+	if err != nil {
+		return nil, err
+	}
+	return &marketOld.ClientDealProposal{
+		Proposal: marketOld.DealProposal{
+			PieceCID:             p.Proposal.PieceCID,
+			PieceSize:            p.Proposal.PieceSize,
+			VerifiedDeal:         p.Proposal.VerifiedDeal,
+			Client:               p.Proposal.Client,
+			Provider:             p.Proposal.Provider,
+			Label:                label,
+			StartEpoch:           p.Proposal.StartEpoch,
+			EndEpoch:             p.Proposal.EndEpoch,
+			StoragePricePerEpoch: p.Proposal.StoragePricePerEpoch,
+			ProviderCollateral:   p.Proposal.ProviderCollateral,
+			ClientCollateral:     p.Proposal.ClientCollateral,
+		},
+		ClientSignature: p.ClientSignature,
+	}, nil
+}
+
 func TestHandleDealStream(t *testing.T) {
 	t.Run("handles cases where the proposal is already being tracked", func(t *testing.T) {
 
